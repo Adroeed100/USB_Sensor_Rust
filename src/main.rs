@@ -133,6 +133,17 @@ struct DeviceTracker {
 
 fn process_udev_event(event: &UdevEvent, tracker: &mut DeviceTracker) {
     let action = event.action();
+
+    if matches!(action.as_str(), "add" | "bind") {
+        eprintln!("usb detected: starting filesystem watcher");
+        fs_monitor::start_fs_watch_thread();
+    }
+
+    if matches!(action.as_str(), "remove" | "detach" | "unbind") {
+        eprintln!("usb removed: stopping filesystem watcher");
+        fs_monitor::stop_fs_watch_thread();
+    }
+
     let devpath = match event.devpath() {
         Some(path) => path.to_owned(),
         None => return,
@@ -141,12 +152,7 @@ fn process_udev_event(event: &UdevEvent, tracker: &mut DeviceTracker) {
     let snapshot = capture_device_snapshot(event, &action, &devpath);
     log_usb_event(&snapshot);
 
-    if matches!(action.as_str(), "add" | "bind") {
-        fs_monitor::start_fs_watch_thread();
-    }
-
-    if matches!(action.as_str(), "remove" | "detach") {
-        fs_monitor::stop_fs_watch_thread();
+    if matches!(action.as_str(), "remove" | "detach" | "unbind") {
         tracker.known_devices.remove(&snapshot.key);
         return;
     }

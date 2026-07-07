@@ -21,6 +21,7 @@ pub fn start_fs_watch_thread() {
     let mut watcher = watcher_slot.lock().expect("filesystem watcher mutex poisoned");
 
     if watcher.is_some() {
+        eprintln!("filesystem watcher is already running");
         return;
     }
 
@@ -41,6 +42,7 @@ pub fn start_fs_watch_thread() {
 
 pub fn stop_fs_watch_thread() {
     let Some(watcher_slot) = FS_WATCH.get() else {
+        eprintln!("filesystem watcher is not running");
         return;
     };
 
@@ -50,11 +52,13 @@ pub fn stop_fs_watch_thread() {
     };
 
     let Some(watcher) = watcher else {
+        eprintln!("filesystem watcher is not running");
         return;
     };
 
     watcher.stop_requested.store(true, Ordering::SeqCst);
     let _ = watcher.handle.join();
+    eprintln!("filesystem watcher stopped");
 }
 
 fn resolve_fs_watch_target() -> PathBuf {
@@ -62,7 +66,7 @@ fn resolve_fs_watch_target() -> PathBuf {
         return expand_tilde(PathBuf::from(path));
     }
 
-    expand_tilde(PathBuf::from("~/Projects/rust/fs_monitor"))
+    expand_tilde(PathBuf::from("~/Projects/rust/sensor"))
 }
 
 fn expand_tilde(path: PathBuf) -> PathBuf {
@@ -137,6 +141,8 @@ fn watch_fs_target(target: PathBuf, stop_requested: std::sync::Arc<AtomicBool>) 
             let _ = close(fd);
             return;
         }
+
+        eprintln!("filesystem watcher is running");
 
         let mut buffer = [0u8; 8192];
         loop {
