@@ -16,13 +16,13 @@ struct FilesystemWatcher {
     handle: thread::JoinHandle<()>,
 }
 
-pub fn start_fs_watch_thread() {
+pub fn start_fs_watch_thread() -> bool {
     let watcher_slot = FS_WATCH.get_or_init(|| Mutex::new(None));
     let mut watcher = watcher_slot.lock().expect("filesystem watcher mutex poisoned");
 
     if watcher.is_some() {
         eprintln!("filesystem watcher is already running");
-        return;
+        return false;
     }
 
     let target = resolve_fs_watch_target();
@@ -38,12 +38,14 @@ pub fn start_fs_watch_thread() {
         stop_requested,
         handle,
     });
+
+    true
 }
 
-pub fn stop_fs_watch_thread() {
+pub fn stop_fs_watch_thread() -> bool {
     let Some(watcher_slot) = FS_WATCH.get() else {
         eprintln!("filesystem watcher is not running");
-        return;
+        return false;
     };
 
     let watcher = {
@@ -53,12 +55,14 @@ pub fn stop_fs_watch_thread() {
 
     let Some(watcher) = watcher else {
         eprintln!("filesystem watcher is not running");
-        return;
+        return false;
     };
 
     watcher.stop_requested.store(true, Ordering::SeqCst);
     let _ = watcher.handle.join();
     eprintln!("filesystem watcher stopped");
+
+    true
 }
 
 fn resolve_fs_watch_target() -> PathBuf {
@@ -202,10 +206,15 @@ fn should_report_event(filter_name: Option<&OsString>, event_name: Option<&str>)
 }
 
 fn report_inotify_event(mask: u32, watch_root: &Path, file_name: Option<&str>) {
-    let timestamp = super::current_timestamp_ms();
-    let path_label = file_name
-        .map(|name| watch_root.join(name).display().to_string())
-        .unwrap_or_else(|| watch_root.display().to_string());
+    let file_label = file_name
+        .map(|name| name.to_owned())
+        .unwrap_or_else(|| {
+            watch_root
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.to_owned())
+                .unwrap_or_else(|| watch_root.display().to_string())
+        });
 
     let mut labels = Vec::new();
     if mask & IN_CREATE != 0 {
@@ -236,7 +245,12 @@ fn report_inotify_event(mask: u32, watch_root: &Path, file_name: Option<&str>) {
         labels.join(",")
     };
 
-    println!("[{timestamp}] fs watch {labels} path={path_label}");
+    eprintln!(
+        "fs watch action={} file={} dir={}",
+        labels,
+        file_label,
+        watch_root.display()
+    );
 }
 
 fn decode_inotify_name(bytes: &[u8]) -> Option<String> {

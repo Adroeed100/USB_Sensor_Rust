@@ -44,6 +44,8 @@ If `FS_MONITOR_TARGET` is not set, the program uses:
 ~/Projects/rust/fs_monitor
 ```
 
+You can override the default incident metadata with `INCIDENT_SENSOR_ID` and `INCIDENT_ECU_ID`.
+
 You can point it at:
 
 - a directory, to watch that directory directly
@@ -59,22 +61,33 @@ You can point it at:
 
 ## Output
 
-USB events are printed to standard output in a single-line format. Examples:
+USB connect and disconnect events are printed as JSON. Example:
 
 ```text
-[1234567890] usb add key=... devpath=... vid=... pid=... serial=...
-[1234567890] usb anomaly detected key=... devpath=... reason=...
+{
+	"event_id": "USB_ANOMALY_...",
+	"sensor_id": "sensor-01",
+	"timestamp": "2026-06-30T12:58:00Z",
+	"ecu_id": "unknown_ecu",
+	"bus_type": "USB",
+	"source": "/dev/...",
+	"can_id": "n/a",
+	"direction": "rx",
+	"severity": "high",
+	"confidence": 92,
+	"signature": "...",
+	"evidence_hash": "sha256:...",
+	"action_hint": "log_and_alert"
+}
 ```
 
-Filesystem events are also printed while the watcher is active:
-
-```text
-[1234567890] fs watch created path=/path/to/watch/example.txt
-```
+Filesystem events are reported immediately as plain text while the watcher is active, showing the filename, action, and directory.
 
 ## Project Structure
 
-- [src/main.rs](src/main.rs) contains the USB event loop and device tracking logic
+- [src/main.rs](src/main.rs) contains the `udevadm` pump and event dispatch loop
+- [src/usb_monitor.rs](src/usb_monitor.rs) contains USB event parsing, device tracking, and anomaly detection
+- [src/incident.rs](src/incident.rs) contains incident serialization and append-only JSON logging
 - [src/fs_monitor.rs](src/fs_monitor.rs) contains the filesystem watcher implementation
 
 ## Notes
