@@ -1,1 +1,40 @@
+# Rust build output
 /target
+
+# Cargo lock is kept for binaries (intentional)
+# Cargo.lock
+
+# IDE and editor directories
+.idea/
+.vscode/
+*.iml
+
+# OS-level junk
+.DS_Store
+Thumbs.db
+
+# Environment variable overrides (never commit secrets)
+.env
+.env.*
+
+# Incident output files that may be generated at runtime
+incidents.json
+incidents.ndjson
+*.incidents.json
+
+# ClamAV scan logs (if redirected to file)
+clamscan.log
+*.clamscan.log
+
+# Test artifacts placed in the watch directory
+welcome.txt
+eicar*
+test_*.txt
+test_*.sh
+test_*.bin
+
+# Sensor PID / lock files (if added later)
+sensor.pid
+sensor.lock
+
+USB_Sensor_Incident_Types.xlsx
