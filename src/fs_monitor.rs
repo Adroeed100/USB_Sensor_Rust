@@ -182,13 +182,9 @@ fn run_clamscan(target: PathBuf) {
     }
 
     if threats == 0 {
-        if let Some(status) = exit_status {
-            eprintln!("clamscan: scan complete — no threats found (exit code: {status})");
-        } else {
-            eprintln!("clamscan: scan complete — no threats found");
-        }
+        eprintln!(">>> CLAMAV SCAN COMPLETE: No threats found in {}", target.display());
     } else {
-        eprintln!("clamscan: scan complete — {threats} threat(s) found");
+        eprintln!(">>> CLAMAV SCAN COMPLETE: {threats} threat(s) found in {}", target.display());
     }
 }
 
@@ -261,11 +257,9 @@ fn watch_fs_target(target: PathBuf, stop_requested: std::sync::Arc<AtomicBool>) 
         };
 
         let mask = IN_CREATE
-            | IN_MODIFY
             | IN_DELETE
             | IN_MOVED_FROM
             | IN_MOVED_TO
-            | IN_ATTRIB
             | IN_CLOSE_WRITE
             | IN_DELETE_SELF
             | IN_MOVE_SELF;
@@ -383,6 +377,9 @@ fn report_inotify_event(
             );
             eprintln!("fs watch type=13 {reason} dir={}", watch_root.display());
         }
+
+        // Trigger ClamAV to scan this specific newly uploaded file
+        start_clamscan_thread(PathBuf::from(&source));
     }
 
     // ── Primary event type selection (highest-severity bit wins) ───────────
@@ -392,7 +389,7 @@ fn report_inotify_event(
         Some((12u8, "medium", "file_moved",          "log_event"))
     } else if mask & IN_CREATE != 0 {
         Some((9u8,  "low",    "file_created",        "log_event"))
-    } else if mask & (IN_MODIFY | IN_ATTRIB | IN_CLOSE_WRITE) != 0 {
+    } else if mask & IN_CLOSE_WRITE != 0 {
         Some((10u8, "medium", "file_modified",       "log_event"))
     } else {
         None

@@ -126,6 +126,8 @@ All configuration is via environment variables — no config files needed.
 | `INCIDENT_SENSOR_ID` | `sensor_id` field in every incident record | `sensor-01` |
 | `INCIDENT_ECU_ID` | `ecu_id` field in every incident record | `unknown_ecu` |
 | `ALLOWED_USB_CLASSES` | Comma-separated hex USB class codes that are permitted (e.g. `03,09`). Type-8 check is skipped when unset. | _(unset)_ |
+| `IDSM_IP` | IP address of the Intrusion Detection System Manager | `127.0.0.1` |
+| `IDSM_PORT` | Port of the Intrusion Detection System Manager | `8081` |
 
 ### Example
 
@@ -154,7 +156,7 @@ cargo run
 
 ## Output Format
 
-Every incident is a JSON object on a single logical block written to **stdout**:
+Every incident is a JSON object on a single logical block written to **stdout** and also forwarded to the IDSM over HTTP POST (to integrate with the automotive IDPS framework).
 
 ```json
 {

@@ -38,7 +38,31 @@ pub(crate) fn severity_id_for(severity: &str) -> u8 {
 }
 
 pub(crate) fn record_incident(incident: &IncidentRecord) {
-    println!("{}", incident_record_to_json(incident));
+    let original_json = incident_record_to_json(incident);
+    println!("{}", original_json);
+
+    let idsm_ip = env::var("IDSM_IP").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let idsm_port = env::var("IDSM_PORT").unwrap_or_else(|_| "8081".to_string());
+    let target = format!("{}:{}", idsm_ip, idsm_port);
+
+    let idsm_json = format!(
+        r#"{{"event_id":{},"source":{},"description":{},"context_data":null}}"#,
+        incident.incident_type_id,
+        json_string(&incident.source),
+        json_string(&incident.signature)
+    );
+
+    std::process::Command::new("curl")
+        .args([
+            "-X", "POST",
+            &format!("http://{}/api/idsm/event", target),
+            "-H", "Content-Type: application/json",
+            "-d", &idsm_json
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok();
 }
 
 pub(crate) fn incident_sensor_id() -> String {
