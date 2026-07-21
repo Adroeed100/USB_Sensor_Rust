@@ -52,17 +52,12 @@ pub(crate) fn record_incident(incident: &IncidentRecord) {
         json_string(&incident.signature)
     );
 
-    std::process::Command::new("curl")
-        .args([
-            "-X", "POST",
-            &format!("http://{}/api/idsm/event", target),
-            "-H", "Content-Type: application/json",
-            "-d", &idsm_json
-        ])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .ok();
+    if let Ok(mut stream) = std::net::TcpStream::connect(&target) {
+        use std::io::Write;
+        // Send raw JSON over TCP followed by a newline
+        let payload = format!("{}\n", idsm_json);
+        let _ = stream.write_all(payload.as_bytes());
+    }
 }
 
 pub(crate) fn incident_sensor_id() -> String {
