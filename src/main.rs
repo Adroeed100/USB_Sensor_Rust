@@ -1,3 +1,4 @@
+use std::env;
 use std::io::{self, BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::thread;
@@ -9,13 +10,57 @@ mod usb_monitor;
 
 use incident::{
     build_event_id, build_evidence_hash, current_timestamp_ms, current_timestamp_rfc3339,
-    incident_ecu_id, incident_sensor_id, record_incident, severity_id_for, IncidentRecord,
+    incident_ecu_id, incident_sensor_id, record_incident, set_idsm_addr, severity_id_for,
+    IncidentRecord,
 };
 use usb_monitor::{process_udev_event, DeviceTracker, UdevEvent};
 
 fn main() {
+    let idsm_addr = match parse_idsm_arg() {
+        Ok(addr) => addr,
+        Err(msg) => {
+            eprintln!("{msg}");
+            std::process::exit(1);
+        }
+    };
+
+    eprintln!("idsm: target set to {idsm_addr}");
+    set_idsm_addr(idsm_addr);
+
     if let Err(err) = run_sensor() {
         eprintln!("sensor exited with error: {err}");
+    }
+}
+
+/// Accepts either:
+///   sensor <IP:PORT>
+///   sensor <IP> <PORT>
+fn parse_idsm_arg() -> Result<String, String> {
+    let args: Vec<String> = env::args().skip(1).collect();
+
+    match args.as_slice() {
+        [addr] => {
+            if !addr.contains(':') {
+                return Err(format!(
+                    "usage: sensor <IDSM_IP:PORT>\n  e.g. sensor 192.168.1.50:8081\nreceived: {addr}"
+                ));
+            }
+            let (_ip, port) = addr.rsplit_once(':').unwrap();
+            if port.parse::<u16>().is_err() {
+                return Err(format!("invalid port in {addr}"));
+            }
+            Ok(addr.clone())
+        }
+        [ip, port] => {
+            if port.parse::<u16>().is_err() {
+                return Err(format!("invalid port: {port}"));
+            }
+            Ok(format!("{ip}:{port}"))
+        }
+        _ => Err(
+            "usage: sensor <IDSM_IP:PORT>\n   or: sensor <IDSM_IP> <IDSM_PORT>\n\n  e.g. sensor 192.168.1.50:8081\n  e.g. sensor 192.168.1.50 8081"
+                .to_owned(),
+        ),
     }
 }
 

@@ -1,5 +1,9 @@
 use std::env;
 use std::hash::{Hash, Hasher};
+use std::io::Write;
+use std::net::TcpStream;
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 /// A single structured incident record emitted to stdout as JSON.
 #[derive(Debug, Clone)]
@@ -37,28 +41,82 @@ pub(crate) fn severity_id_for(severity: &str) -> u8 {
     }
 }
 
-pub(crate) fn record_incident(incident: &IncidentRecord) {
-    let original_json = incident_record_to_json(incident);
-    println!("{}", original_json);
+// ── IDSM TCP delivery ────────────────────────────────────────────────────────
 
-    let idsm_ip = env::var("IDSM_IP").unwrap_or_else(|_| "127.0.0.1".to_string());
-    let idsm_port = env::var("IDSM_PORT").unwrap_or_else(|_| "8081".to_string());
-    let target = format!("{}:{}", idsm_ip, idsm_port);
+/// Set once from main() after parsing the IDSM address off the command line.
+static IDSM_ADDR: OnceLock<String> = OnceLock::new();
 
-    let idsm_json = format!(
+/// Persistent connection, shared across all threads that call record_incident.
+static IDSM_CONN: Mutex<Option<TcpStream>> = Mutex::new(None);
+
+/// Called once from main() right after parsing argv.
+pub(crate) fn set_idsm_addr(addr: String) {
+    if IDSM_ADDR.set(addr).is_err() {
+        eprintln!("idsm: address already set, ignoring duplicate call");
+    }
+}
+
+/// Get an existing live connection, or attempt to (re)connect to IDSM.
+/// Returns a cloned handle so multiple threads can write concurrently
+/// without holding the lock during the actual send.
+fn idsm_stream() -> Option<TcpStream> {
+    let addr = IDSM_ADDR.get()?; // no address configured → no-op
+
+    let mut guard = IDSM_CONN.lock().unwrap();
+
+    if let Some(stream) = guard.as_ref() {
+        if let Ok(cloned) = stream.try_clone() {
+            return Some(cloned);
+        }
+    }
+
+    match TcpStream::connect(addr) {
+        Ok(stream) => {
+            let _ = stream.set_nodelay(true);
+            let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+            let cloned = stream.try_clone().ok();
+            *guard = Some(stream);
+            eprintln!("idsm: connected to {addr}");
+            cloned
+        }
+        Err(err) => {
+            eprintln!("idsm: connect to {addr} failed: {err}");
+            None
+        }
+    }
+}
+
+/// Drop the cached connection so the next send re-attempts a fresh connect.
+fn idsm_drop_connection() {
+    let mut guard = IDSM_CONN.lock().unwrap();
+    *guard = None;
+}
+
+fn send_to_idsm(incident: &IncidentRecord) {
+    let Some(mut stream) = idsm_stream() else {
+        return; // not configured, or connect failed — already logged
+    };
+
+    let mut payload = format!(
         r#"{{"event_id":{},"source":{},"description":{},"context_data":null}}"#,
         incident.incident_type_id,
         json_string(&incident.source),
         json_string(&incident.signature)
     );
+    payload.push('\n'); // newline-delimited so the IDSM side can just read_line
 
-    if let Ok(mut stream) = std::net::TcpStream::connect(&target) {
-        use std::io::Write;
-        // Send raw JSON over TCP followed by a newline
-        let payload = format!("{}\n", idsm_json);
-        let _ = stream.write_all(payload.as_bytes());
+    if let Err(err) = stream.write_all(payload.as_bytes()) {
+        eprintln!("idsm: send failed, will reconnect next incident: {err}");
+        idsm_drop_connection();
     }
 }
+
+pub(crate) fn record_incident(incident: &IncidentRecord) {
+    println!("{}", incident_record_to_json(incident));
+    send_to_idsm(incident);
+}
+
+// ── Shared helpers ──────────────────────────────────────────────────────────
 
 pub(crate) fn incident_sensor_id() -> String {
     env::var("INCIDENT_SENSOR_ID").unwrap_or_else(|_| "sensor-01".to_owned())
