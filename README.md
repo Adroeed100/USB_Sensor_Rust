@@ -68,10 +68,10 @@ When a USB device is connected, a background inotify watcher starts automaticall
 Only one watcher thread runs at a time. It stops automatically on USB disconnect.
 
 ### 7. ClamAV Malware Scanning (type 17)
-On every USB connect, a ClamAV scan is started in a background thread:
-- Runs `clamscan --no-summary --infected -r <watched_dir>`
+On every USB connect, a full directory ClamAV scan is started in a background thread. Additionally, whenever a new file finishes uploading to the USB drive, a targeted scan runs automatically on that specific file.
+- Runs `clamscan --no-summary --infected -r <target>`
 - Emits a `critical` JSON incident **only** for files flagged as `FOUND`
-- All clean-scan output goes to stderr
+- Scan results are explicitly printed to stderr (e.g., `>>> CLAMAV SCAN COMPLETE: No threats found in...`)
 - The scan is automatically aborted if the USB device is disconnected before completion to prevent CPU/memory leaks.
 
 ### 8. Udevadm Crash Tracking (type 14)
@@ -156,7 +156,9 @@ cargo run
 
 ## Output Format
 
-Every incident is a JSON object on a single logical block written to **stdout** and also forwarded to the IDSM over HTTP POST (to integrate with the automotive IDPS framework).
+Every incident is a JSON object on a single logical block written to **stdout**. 
+
+**IDPS Network Integration:** The sensor runs as a completely independent program. It is **not** compiled into or integrated with the IDSM/IDSR source code. Instead, every time an incident occurs, the sensor spawns a lightweight `curl` process to send the JSON payload over the network via an **HTTP POST** request directly to the IDSM's network endpoint (default `127.0.0.1:8081`). This allows the sensor to seamlessly integrate with standard Automotive IDPS frameworks over a local area network.
 
 ```json
 {
